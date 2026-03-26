@@ -44,7 +44,13 @@ from google.auth.transport import requests as google_requests
 
 CLIENT_SECRETS_FILE = "google_credentials.json"
 SCOPES = ['openid', 'https://www.googleapis.com/auth/userinfo.email', 'https://www.googleapis.com/auth/userinfo.profile']
-redirect_uri="https://p4ejb.streamlit.app/"
+# The exact URL of your live Streamlit app (make sure it matches yours!)
+REDIRECT_URI = "https://p4ejb.streamlit.app/"
+
+# ... your other code ...
+
+# Tell Google where to send the user back to
+flow.redirect_uri = REDIRECT_URI
 
 def get_flow(state=None):
     flow = Flow.from_client_secrets_file(
