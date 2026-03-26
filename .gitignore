@@ -6,3 +6,7 @@ venv/
 *.json
 __pycache__/
 .auth_cache.json
+venv/
+*.json
+__pycache__/
+.auth_cache.json
