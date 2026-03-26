@@ -46,11 +46,11 @@ CLIENT_SECRETS_FILE = "google_credentials.json"
 SCOPES = ['openid', 'https://www.googleapis.com/auth/userinfo.email', 'https://www.googleapis.com/auth/userinfo.profile']
 
 def get_flow(state=None):
-   flow = Flow.from_client_secrets_file(
-    "google_credentials.json",
-    scopes=scopes,
-redirect_uri="https://p4ejb.streamlit.app/"
-)
+ flow = Flow.from_client_secrets_file(
+        "google_credentials.json",
+        scopes=scopes,
+        redirect_uri="https://p4ejb.streamlit.app/"
+    )
     return flow
 
 # --- SESSION MEMORY ---
