@@ -49,9 +49,8 @@ def get_flow(state=None):
    flow = Flow.from_client_secrets_file(
     "google_credentials.json",
     scopes=scopes,
-    redirect_uri="https://p4ejb.streamlit.app/"
+redirect_uri="https://p4ejb.streamlit.app/"
 )
-    flow.redirect_uri = REDIRECT_URI
     return flow
 
 # --- SESSION MEMORY ---
