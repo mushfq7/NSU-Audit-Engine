@@ -52,7 +52,6 @@ def get_flow(state=None):
         redirect_uri="https://p4ejb.streamlit.app/"
     )
     return flow
-
 # --- SESSION MEMORY ---
 if 'user_email' not in st.session_state:
     st.session_state.user_email = None
