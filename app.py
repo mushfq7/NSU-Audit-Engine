@@ -44,7 +44,7 @@ from google.auth.transport import requests as google_requests
 
 CLIENT_SECRETS_FILE = "google_credentials.json"
 SCOPES = ['openid', 'https://www.googleapis.com/auth/userinfo.email', 'https://www.googleapis.com/auth/userinfo.profile']
-REDIRECT_URI = "http://localhost:8501/"
+redirect_uri="https://p4ejb.streamlit.app/"
 
 def get_flow(state=None):
     flow = Flow.from_client_secrets_file(
