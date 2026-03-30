@@ -3,6 +3,11 @@ import pandas as pd
 import os
 import datetime
 import json
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from email.mime.base import MIMEBase
+from email import encoders
 from PIL import Image
 import scanner  
 
@@ -12,8 +17,39 @@ st.set_page_config(page_title="NSU Audit Portal", page_icon="🎓", layout="wide
 # --- SECURITY OVERRIDE FOR LOCALHOST ---
 os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
 
+# --- SESSION MEMORY (Must be at top) ---
+if 'user_email' not in st.session_state:
+    st.session_state.user_email = None
+if 'scan_data' not in st.session_state:
+    st.session_state.scan_data = None
+if 'scan_filename' not in st.session_state:
+    st.session_state.scan_filename = None
+
+# --- EMAIL FUNCTION ---
+def send_transcript_email(receiver_email, csv_file_path):
+    sender_email = "mushfq7@gmail.com" 
+    password = st.secrets["GMAIL_PASSWORD"] 
+    
+    message = MIMEMultipart()
+    message["From"] = sender_email
+    message["To"] = receiver_email
+    message["Subject"] = "🎓 Your NSU Degree Audit Transcript"
+
+    body = f"Hello!\n\nPlease find your scanned academic transcript attached.\n\nSent via NSU Audit Engine for {receiver_email}."
+    message.attach(MIMEText(body, "plain"))
+
+    with open(csv_file_path, "rb") as attachment:
+        part = MIMEBase("application", "octet-stream")
+        part.set_payload(attachment.read())
+        encoders.encode_base64(part)
+        part.add_header("Content-Disposition", f"attachment; filename=NSU_Transcript_Audit.csv")
+        message.attach(part)
+
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+        server.login(sender_email, password)
+        server.sendmail(sender_email, receiver_email, message.as_string())
+
 # --- FIREBASE CLOUD SETUP ---
-# Recreates the Firebase key from the Streamlit vault so the system can read it
 if not os.path.exists("firebase_key.json") and "FIREBASE_JSON" in st.secrets:
     with open("firebase_key.json", "w") as f:
         f.write(st.secrets["FIREBASE_JSON"])
@@ -43,8 +79,6 @@ def get_flow():
         "https://www.googleapis.com/auth/userinfo.email",
         "https://www.googleapis.com/auth/userinfo.profile"
     ]
-    
-    # Read directly from the secure Streamlit vault, completely bypassing files!
     secret_data = st.secrets["GOOGLE_JSON"]
     if isinstance(secret_data, str):
         client_config = json.loads(secret_data)
@@ -57,20 +91,14 @@ def get_flow():
         redirect_uri="https://nsu-audit-engine-5godskzpjon9ovconrxvzk.streamlit.app/"
     )
     return flow
-    
-# --- SESSION MEMORY ---
-if 'user_email' not in st.session_state:
-    st.session_state.user_email = None
 
 # --- LOGIN INTERCEPTOR ---
 if 'code' in st.query_params:
     try:
-        # Check if our hidden cache file exists
         if not os.path.exists(".auth_cache.json"):
             st.error("🚨 Authentication cache not found. Please clear the URL and click Login again.")
             st.stop()
 
-        # Read the saved passwords from the hard drive
         with open(".auth_cache.json", "r") as f:
             auth_data = json.load(f)
 
@@ -88,7 +116,6 @@ if 'code' in st.query_params:
         
         st.session_state.user_email = user_info.get('email')
         
-        # Clean up: Delete the temporary security file and clear the URL
         os.remove(".auth_cache.json")
         st.query_params.clear() 
         st.rerun() 
@@ -105,13 +132,9 @@ if st.session_state.user_email is None:
     st.markdown("### Secure Identity Access Management (IAM)")
     st.info("System access restricted. Please authenticate with your Google account.")
     
-    # Generate the secure URL
     flow = get_flow()
-    
-    # THE ULTIMATE FIX: prompt='select_account' forces the browser to ask for an email
     auth_url, state = flow.authorization_url(prompt='select_account')
     
-    # Save the exact state and verifier to the hard drive
     with open(".auth_cache.json", "w") as f:
         json.dump({"state": state, "verifier": flow.code_verifier}, f)
     
@@ -126,6 +149,7 @@ else:
         st.success(f"👤 {st.session_state.user_email}")
         if st.button("Logout"):
             st.session_state.user_email = None
+            st.session_state.scan_data = None  # Clear data on logout
             st.rerun()
 
     st.markdown("Upload your official NSU transcript. Scans are automatically backed up to the secure cloud under your identity.")
@@ -136,6 +160,7 @@ else:
         st.markdown("### 📥 Upload Transcript")
         uploaded_file = st.file_uploader("Drop Transcript Image (PNG/JPG) or CSV here", type=['png', 'jpg', 'jpeg', 'csv'])
 
+        # --- 1. THE CAPTURE ENGINE ---
         if uploaded_file is not None:
             if uploaded_file.type in ['image/png', 'image/jpeg', 'image/jpg']:
                 st.info("Scanning document with Optical Character Recognition...")
@@ -147,12 +172,14 @@ else:
                     try:
                         csv_filename = scanner.scan_image(temp_img_path)
                         if csv_filename and os.path.exists(csv_filename):
+                            # Lock into memory
+                            st.session_state.scan_filename = csv_filename
+                            st.session_state.scan_data = pd.read_csv(csv_filename)
                             st.success("✅ OCR Extraction Successful!")
-                            df = pd.read_csv(csv_filename)
-                            st.dataframe(df, use_container_width=True)
                             
+                            # Push to Firebase
                             if db is not None:
-                                records = df.to_dict(orient='records')
+                                records = st.session_state.scan_data.to_dict(orient='records')
                                 doc_ref = db.collection('scan_history').document()
                                 doc_ref.set({
                                     'timestamp': datetime.datetime.now(),
@@ -169,14 +196,33 @@ else:
 
             elif uploaded_file.type == 'text/csv':
                 df = pd.read_csv(uploaded_file)
+                st.session_state.scan_data = df
+                st.session_state.scan_filename = "uploaded_data.csv"
                 st.success("✅ CSV Database Loaded.")
-                st.dataframe(df, use_container_width=True)
+
+        # --- 2. THE PERSISTENT DISPLAY AREA (With Email Button) ---
+        if st.session_state.scan_data is not None:
+            st.markdown("---")
+            st.subheader("📊 Extracted Academic Records")
+            
+            # Email Button placed above the table for easy access
+            if st.button("📧 Email Transcript to Me", type="primary"):
+                with st.spinner("Sending email..."):
+                    try:
+                        temp_email_file = "transcript_to_send.csv"
+                        st.session_state.scan_data.to_csv(temp_email_file, index=False)
+                        send_transcript_email(st.session_state.user_email, temp_email_file)
+                        st.success(f"Sent successfully to {st.session_state.user_email}!")
+                    except Exception as e:
+                        st.error(f"Email failed: {e}")
+            
+            # The Data Table
+            st.dataframe(st.session_state.scan_data, use_container_width=True)
 
     with col2:
         st.markdown("### ☁️ Cloud History")
         st.markdown("Recent system-wide scans:")
         
-        # This button is now outside of the "if uploaded_file" block
         if st.button("Refresh Cloud History", type="secondary"):
             if db is not None:
                 try:
