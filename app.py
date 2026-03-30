@@ -169,3 +169,32 @@ else:
                             
                     except Exception as e:
                         st.error(f"System Error: {e}")
+
+elif uploaded_file.type == 'text/csv':
+                df = pd.read_csv(uploaded_file)
+                st.success("✅ CSV Database Loaded Successfully.")
+                st.dataframe(df, use_container_width=True)
+
+    with col2:
+        st.markdown("### ☁️ Cloud History")
+        st.markdown("Recent system-wide scans:")
+        
+        if st.button("Refresh Cloud History", type="secondary"):
+            if db is not None:
+                try:
+                    history_ref = db.collection('scan_history').order_by('timestamp', direction=firestore.Query.DESCENDING).limit(5)
+                    docs = history_ref.stream()
+                    
+                    found_history = False
+                    for doc in docs:
+                        found_history = True
+                        record = doc.to_dict()
+                        time_str = record['timestamp'].strftime("%Y-%m-%d %H:%M")
+                        st.info(f"📄 **{record['filename']}**\n\n👤 {record['user_account']}\n\n⏱️ {time_str}\n\n📊 Courses: {record['total_courses_found']}")
+                        
+                    if not found_history:
+                        st.warning("No scan history found in Firebase yet.")
+                except Exception as e:
+                    st.error(f"Cloud Error: {e}")
+            else:
+                st.error("Firebase connection is not active.")
