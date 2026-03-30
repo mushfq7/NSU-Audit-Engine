@@ -3,16 +3,6 @@ import pandas as pd
 import os
 import datetime
 import json
-# --- CLOUD DEPLOYMENT SECRETS HACK ---
-# If the app is running in the cloud, it won't find the physical JSON files.
-# This code grabs the secret text from Streamlit's secure vault and recreates the files temporarily.
-if not os.path.exists("firebase_key.json") and "FIREBASE_JSON" in st.secrets:
-    with open("firebase_key.json", "w") as f:
-        f.write(st.secrets["FIREBASE_JSON"])
-
-if not os.path.exists("google_credentials.json") and "GOOGLE_JSON" in st.secrets:
-    with open("google_credentials.json", "w") as f:
-        f.write(st.secrets["GOOGLE_JSON"])
 from PIL import Image
 import scanner  
 
@@ -23,6 +13,11 @@ st.set_page_config(page_title="NSU Audit Portal", page_icon="🎓", layout="wide
 os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"
 
 # --- FIREBASE CLOUD SETUP ---
+# Recreates the Firebase key from the Streamlit vault so the system can read it
+if not os.path.exists("firebase_key.json") and "FIREBASE_JSON" in st.secrets:
+    with open("firebase_key.json", "w") as f:
+        f.write(st.secrets["FIREBASE_JSON"])
+
 import firebase_admin
 from firebase_admin import credentials, firestore
 
@@ -42,22 +37,32 @@ from google_auth_oauthlib.flow import Flow
 from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
 
-CLIENT_SECRETS_FILE = "google_credentials.json"
-SCOPES = ['openid', 'https://www.googleapis.com/auth/userinfo.email', 'https://www.googleapis.com/auth/userinfo.profile']
-
-def get_flow(state=None):
- flow = Flow.from_client_secrets_file(
-        "google_credentials.json",
+def get_flow():
+    scopes = [
+        "openid",
+        "https://www.googleapis.com/auth/userinfo.email",
+        "https://www.googleapis.com/auth/userinfo.profile"
+    ]
+    
+    # Read directly from the secure Streamlit vault, completely bypassing files!
+    secret_data = st.secrets["GOOGLE_JSON"]
+    if isinstance(secret_data, str):
+        client_config = json.loads(secret_data)
+    else:
+        client_config = dict(secret_data)
+        
+    flow = Flow.from_client_config(
+        client_config,
         scopes=scopes,
-        redirect_uri="https://nsu-audit-engine-5godskzpjon9ovconrxvzk.streamlit.app/" 
+        redirect_uri="https://nsu-audit-engine-5godskzpjon9ovconrxvzk.streamlit.app/"
     )
     return flow
-
+    
 # --- SESSION MEMORY ---
 if 'user_email' not in st.session_state:
     st.session_state.user_email = None
 
-# --- LOGIN INTERCEPTOR (Reads from Hard Drive) ---
+# --- LOGIN INTERCEPTOR ---
 if 'code' in st.query_params:
     try:
         # Check if our hidden cache file exists
@@ -69,9 +74,7 @@ if 'code' in st.query_params:
         with open(".auth_cache.json", "r") as f:
             auth_data = json.load(f)
 
-        flow = get_flow(state=auth_data["state"])
-        
-        # Inject the verifier from the file
+        flow = get_flow()
         flow.fetch_token(
             code=st.query_params['code'],
             code_verifier=auth_data["verifier"]
@@ -104,13 +107,15 @@ if st.session_state.user_email is None:
     
     # Generate the secure URL
     flow = get_flow()
-    auth_url, state = flow.authorization_url(prompt='consent')
     
-    # THE FIX: Save the exact state and verifier to the hard drive
+    # THE ULTIMATE FIX: prompt='select_account' forces the browser to ask for an email
+    auth_url, state = flow.authorization_url(prompt='select_account')
+    
+    # Save the exact state and verifier to the hard drive
     with open(".auth_cache.json", "w") as f:
         json.dump({"state": state, "verifier": flow.code_verifier}, f)
     
-    st.markdown(f'<br><a href="{auth_url}" target="_self" style="display: inline-block; padding: 12px 24px; background-color: #4285F4; color: white; text-decoration: none; font-size: 16px; border-radius: 5px; font-weight: bold; border: 1px solid #357AE8; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">🛡️ Sign in with Google</a>', unsafe_allow_html=True)
+    st.markdown(f'<br><a href="{auth_url}" target="_top" style="display: inline-block; padding: 12px 24px; background-color: #4285F4; color: white; text-decoration: none; font-size: 16px; border-radius: 5px; font-weight: bold; border: 1px solid #357AE8; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">🛡️ Sign in with Google</a>', unsafe_allow_html=True)
 
 else:
     # 🔓 LOGGED IN VIEW
@@ -161,28 +166,6 @@ else:
                                 
                         else:
                             st.error("⚠️ OCR failed to find recognizable courses. Please upload a clearer image.")
+                            
                     except Exception as e:
                         st.error(f"System Error: {e}")
-
-            elif uploaded_file.type == 'text/csv':
-                df = pd.read_csv(uploaded_file)
-                st.success("✅ CSV Database Loaded Successfully.")
-                st.dataframe(df, use_container_width=True)
-
-    with col2:
-        st.markdown("### ☁️ Cloud History")
-        st.markdown("Recent system-wide scans:")
-        
-        if db is not None and st.button("Refresh Cloud History"):
-            history_ref = db.collection('scan_history').order_by('timestamp', direction=firestore.Query.DESCENDING).limit(5)
-            docs = history_ref.stream()
-            
-            found_history = False
-            for doc in docs:
-                found_history = True
-                record = doc.to_dict()
-                time_str = record['timestamp'].strftime("%Y-%m-%d %H:%M")
-                st.info(f"📄 **{record['filename']}**\n\n👤 {record['user_account']}\n\n⏱️ {time_str}\n\n📊 Courses Extracted: {record['total_courses_found']}")
-                
-            if not found_history:
-                st.write("No scan history found in the cloud yet.")
