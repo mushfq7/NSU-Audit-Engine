@@ -133,12 +133,12 @@ else:
     col1, col2 = st.columns([2, 1])
 
     with col1:
+        st.markdown("### 📥 Upload Transcript")
         uploaded_file = st.file_uploader("Drop Transcript Image (PNG/JPG) or CSV here", type=['png', 'jpg', 'jpeg', 'csv'])
 
         if uploaded_file is not None:
             if uploaded_file.type in ['image/png', 'image/jpeg', 'image/jpg']:
                 st.info("Scanning document with Optical Character Recognition...")
-                
                 temp_img_path = "temp_upload.png"
                 with open(temp_img_path, "wb") as f:
                     f.write(uploaded_file.getbuffer())
@@ -146,7 +146,6 @@ else:
                 with st.spinner("Extracting academic records..."):
                     try:
                         csv_filename = scanner.scan_image(temp_img_path)
-                        
                         if csv_filename and os.path.exists(csv_filename):
                             st.success("✅ OCR Extraction Successful!")
                             df = pd.read_csv(csv_filename)
@@ -162,23 +161,22 @@ else:
                                     'total_courses_found': len(records),
                                     'data': records
                                 })
-                                st.toast("☁️ Scan safely backed up to Firebase Cloud!")
-                                
+                                st.toast("☁️ Scan safely backed up to Firebase!")
                         else:
-                            st.error("⚠️ OCR failed to find recognizable courses. Please upload a clearer image.")
-                            
+                            st.error("⚠️ OCR failed to find recognizable courses.")
                     except Exception as e:
                         st.error(f"System Error: {e}")
 
-elif uploaded_file.type == 'text/csv':
+            elif uploaded_file.type == 'text/csv':
                 df = pd.read_csv(uploaded_file)
-                st.success("✅ CSV Database Loaded Successfully.")
+                st.success("✅ CSV Database Loaded.")
                 st.dataframe(df, use_container_width=True)
 
     with col2:
         st.markdown("### ☁️ Cloud History")
         st.markdown("Recent system-wide scans:")
         
+        # This button is now outside of the "if uploaded_file" block
         if st.button("Refresh Cloud History", type="secondary"):
             if db is not None:
                 try:
@@ -193,7 +191,7 @@ elif uploaded_file.type == 'text/csv':
                         st.info(f"📄 **{record['filename']}**\n\n👤 {record['user_account']}\n\n⏱️ {time_str}\n\n📊 Courses: {record['total_courses_found']}")
                         
                     if not found_history:
-                        st.warning("No scan history found in Firebase yet.")
+                        st.warning("No scan history found yet.")
                 except Exception as e:
                     st.error(f"Cloud Error: {e}")
             else:
